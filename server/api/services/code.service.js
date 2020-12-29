@@ -10,7 +10,7 @@ class CodeService{
             //writing code in file
             const fileName=await this.writeFile(code,lang);
             //writing input in file
-            const inputName=await this.writeFile(input,"input");
+            const inputName=input ? await this.writeFile(input, "input") : null;
             //writing command 
             const command=await this.writeCommand(lang,fileName,input);
             //executing code
@@ -20,8 +20,10 @@ class CodeService{
                 await this.deleteFiles(fileName,inputName,lang);
             },200)
 
+            if (output) return output.toString();
+
         }catch(error){
-            throw error;
+            throw { status: "404", message: error };
         }
     }
 
@@ -84,7 +86,7 @@ class CodeService{
             }
         }
 
-        return commmand;
+        return command;
     }
 
     async execChild(command){

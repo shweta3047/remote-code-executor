@@ -16,7 +16,7 @@ export class Controller {
                     output
                 })
             }
-        }catch(err){
+        }catch(error){
             return res.json({
                 status: error.status || "500",
                 message: error.message || "Something Went Wrong",
