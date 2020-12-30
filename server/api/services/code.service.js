@@ -1,135 +1,156 @@
 import fs from "fs";
 import { execFile, spawn, exec } from "child_process";
-const FILE_PATH = `./executable`;
-const FILE_NAME = `sample`;
-const INPUT_NAME = `input`;
+import { stderr } from "process";
+import { resolve } from "path";
+const ROOT_DIR = "/d/Webdev/RemoteCodeExecutor/remote-code-executor";
+const SOURCE_DIR = `${ROOT_DIR}/executor`;
+const TARGET_DIR = `/app/codes`;
+const IMAGE_NAME = "executor:1.0";
 
-class CodeService{
-    async execute(code,input,lang){
-        try{
-            //writing code in file
-            const fileName=await this.writeFile(code,lang);
-            //writing input in file
-            const inputName=input ? await this.writeFile(input, "input") : null;
-            //writing command 
-            const command=await this.writeCommand(lang,fileName,input);
-            //executing code
-            const output=await this.execChild(command);
+class CodeService {
+  async execute(code, input, lang, id) {
+    try {
+      //writing the code,input  files
+      const { file, inputFile } = await this.writeFile(code, lang, input, id);
 
-            setTimeout(async()=>{
-                await this.deleteFiles(fileName,inputName,lang);
-            },200)
+      //write command
+      const { runCode, runContainer } = await this.writeCommand(
+        lang,
+        file,
+        // outputFile,
+        inputFile,
+        id
+      );
 
-            if (output) return output.toString();
+      //executing the file
+      const OUTPUT = await this.execChild(runCode, runContainer, id);
 
-        }catch(error){
-            throw { status: "404", message: error };
-        }
+      //deleting the container
+
+      //deleting files
+
+      if (OUTPUT) {
+        // await this.deleteFiles(fileName, inputName, lang);
+        return OUTPUT.toString();
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async writeFile(code, lang, input, id) {
+    let fileName = `${id}code`;
+    switch (lang) {
+      case "javascript": {
+        fileName += ".js";
+        break;
+      }
+      case "c++": {
+        fileName += ".cpp";
+        break;
+      }
+      case "python": {
+        fileName += ".py";
+        break;
+      }
+      default: {
+        throw { message: "Invalid language" };
+      }
+    }
+    fs.writeFile(`${SOURCE_DIR}/${fileName}`, code, (err) => {
+      if (err) throw { message: err };
+    });
+    // fs.writeFile(`${SOURCE_DIR}/${id}output.txt`, "", (err) => {
+    //   if (err) throw { message: err };
+    // });
+    fs.writeFile(`${SOURCE_DIR}/${id}input.txt`, input, (err) => {
+      if (err) throw { message: err };
+    });
+
+    return {
+      file: fileName,
+      // output: `${id}output.txt`,
+      inputFile: `${id}input.txt`,
+    };
+  }
+
+  async writeCommand(lang, file, input, id) {
+    let command = "";
+    switch (lang) {
+      case "javascript": {
+        command = `cd ${TARGET_DIR} && node ${file} < ${input}`;
+        break;
+      }
+      case "c++": {
+        command = `cd ${TARGET_DIR} && g++ ${file} && a < ${input}`;
+        break;
+      }
+      case "python": {
+        command = `cd ${TARGET_DIR} && python ${file} < ${input}`;
+        break;
+      }
+      default: {
+        throw { message: "Invalid language" };
+      }
     }
 
-    async writeFile(code,lang){
-        try{
-            let fileName=lang==="input"?`${INPUT_NAME}`:`${FILE_NAME}`;
-            switch(lang){
-                case "javascript":{
-                    fileName+=".js";
-                    break;
-                }
-                case "c++":{
-                    fileName+=".cpp";
-                    break;
-                }
-                case "python":{
-                    fileName+=".py";
-                    break;
-                }
-                case "input":{
-                    fileName+=".txt";
-                    break;
-                }
-                default:{}    
-            }
+    const containerName = `${id}container`;
 
-             fs.writeFile(`${FILE_PATH}/${fileName}`,code,(err)=>{
-                if (err){
-                    throw {message:err}
-                }
-            })
-            return fileName;
+    const runCode = `docker exec ${containerName} sh -c "${command}"`;
 
-        }catch(error){
-            throw error;
-        }
-    }
+    const runContainer = `docker run -it -d --name ${containerName} -v "${SOURCE_DIR}:${TARGET_DIR}" ${IMAGE_NAME}`;
 
-    async writeCommand(lang,fileName,inputName){
-        let command="";
-        switch(lang){
-            case "javascript":{
-                command=`node ${FILE_PATH}/${fileName}`;
-                break;
-            }
-            case "c++":{
-                command=`cd ${FILE_PATH} && g++ ${fileName} && a ${
-                    inputName?`< ${inputName}`:null
-                } && cd ..`;
-                break;
-            }
-            case "python":{
-                command=`cd ${FILE_PATH} && python ${fileName} && ${
-                    inputName?`< ${inputName}`:null
-                } && cd ..`;
-                break;
-            }
-            default:{
-                throw "Invalid language";
-            }
-        }
+    return { runCode, runContainer };
+  }
 
-        return command;
-    }
+  async execChild(runCode, runContainer, id) {
+    return new Promise((resolve, reject) => {
+      const execCont = exec(`${runContainer}`);
+      const outputFile = `${id}output.txt`;
+      execCont.on("error", (err) => {
+        throw { status: "404", message: err };
+      });
 
-    async execChild(command){
-        return new Promise((resolve,reject)=>{
-            const child=spawn(command,{shell:true});
-            child.stdout.on("data",(data)=>{
-                resolve(data)
-            });
-            child.stderr.on("data",(data)=>{
-                reject(data.toString());
-            })
-            child.on("error",(err)=>{
-                throw {status:"404",message:err};
-            })
-
-            child.on("exit",(code,signal)=>{
-                console.log("code: ", code);
-                console.log("signal: ", signal)
-            })
-        })
-    }
-
-    async deleteFiles(fileName,inputName,lang){
-        fs.unlinkSync(`${FILE_PATH}/${fileName}`,(err)=>{
-            if(err){
-                throw err;
-            }
+      execCont.stdout.on("data", () => {
+        exec(`${runCode}`, async (error, stdout, stderr) => {
+          await this.endContainer(id);
+          if (stderr) {
+            reject({ message: stderr });
+          } else {
+            // const outputData = fs.createReadStream(`${SOURCE_DIR}/${outputFile}`);
+            // resolve(outputData.toString());
+            resolve(stdout);
+          }
         });
-        if(inputName){
-            fs.unlinkSync(`${FILE_PATH}/${inputName}`,(err)=>{
-                if(err){
-                    throw err;
-                }
-            })
-        }
-        if(lang=="c++"){
-            fs.unlinkSync(`${FILE_PATH}/a.exe`,(err)=>{
-                if(err){
-                    throw err;
-                }
-            })
-        }
-    }
+      });
+    });
+  }
+
+  // async deleteFiles(fileName, inputName, lang) {
+  //   fs.unlinkSync(`${SOURCE_DIR}/${fileName}`, (err) => {
+  //     if (err) throw err;
+  //   });
+  //   if (inputName) {
+  //     fs.unlinkSync(`${SOURCE_DIR}/${inputName}`, (err) => {
+  //       if (err) throw err;
+  //     });
+  //   }
+  //   if (lang == "c++") {
+  //     fs.unlinkSync(`${SOURCE_DIR}/a.exe`, (err) => {
+  //       if (err) throw err;
+  //     });
+  //   }
+  // }
+
+  async endContainer(id) {
+    const containerName = `${id}container`;
+    const exit = `docker stop ${containerName} && docker rm ${containerName}`;
+    cp.exec(`${exit}`, (error, stdout, stderr) => {
+      if (error) {
+        console.log(error);
+      } else console.log("Container stoped and deleted");
+    });
+  }
 }
 
 export default new CodeService();
