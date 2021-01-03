@@ -1,19 +1,19 @@
 import fs from "fs";
 import { execFile, spawn, exec } from "child_process";
 import ValidationService from "./validation.service";
+import { v4 as uuidv4 } from "uuid";
 const FILE_PATH = `./executable`;
 const FILE_NAME = `sample`;
 const INPUT_NAME = `input`;
 
 class CodeService {
-  async execute(code, input, lang) {
+  async execute(code, input, lang, cid) {
     try {
       //validating code
       const { isValid, message } = await ValidationService.execute(
         code,
         input,
-        lang,
-        id
+        lang
       );
       if (!isValid) {
         throw {
@@ -22,9 +22,13 @@ class CodeService {
       }
 
       //writing code in file
-      const fileName = await this.writeFile(code, lang);
-      //writing input in file
-      const inputName = input ? await this.writeFile(input, "input") : null;
+      const { fileName, inputName } = await this.writeFile(
+        code,
+        input,
+        lang,
+        cid
+      );
+
       //writing command
       const command = await this.writeCommand(lang, fileName, input);
       //executing code
@@ -40,39 +44,47 @@ class CodeService {
     }
   }
 
-  async writeFile(code, lang) {
-    try {
-      let fileName = lang === "input" ? `${INPUT_NAME}` : `${FILE_NAME}`;
-      switch (lang) {
-        case "javascript": {
-          fileName += ".js";
-          break;
-        }
-        case "c++": {
-          fileName += ".cpp";
-          break;
-        }
-        case "python": {
-          fileName += ".py";
-          break;
-        }
-        case "input": {
-          fileName += ".txt";
-          break;
-        }
-        default: {
-        }
+  async writeFile(code, input, lang, cid) {
+    let fileName = `${cid}code`;
+    let inputName = `${cid}input.txt`;
+    switch (lang) {
+      case "javascript": {
+        fileName += ".js";
+        break;
       }
-
-      fs.writeFile(`${FILE_PATH}/${fileName}`, code, (err) => {
-        if (err) {
-          throw { message: err };
-        }
-      });
-      return fileName;
-    } catch (error) {
-      throw error;
+      case "c++": {
+        fileName += ".cpp";
+        break;
+      }
+      case "python": {
+        fileName += ".py";
+        break;
+      }
+      default: {
+        throw {
+          message: "Invalid language",
+        };
+      }
     }
+
+    fs.writeFile(`${FILE_PATH}/${fileName}`, code, (err) => {
+      if (err) {
+        throw {
+          message: err,
+        };
+      }
+    });
+    fs.writeFile(`${FILE_PATH}/${inputName}`, input, (err) => {
+      if (err) {
+        throw {
+          message: err,
+        };
+      }
+    });
+    return {
+      fileName,
+      inputName,
+    };
   }
 
   async writeCommand(lang, fileName, inputName) {
@@ -98,7 +110,6 @@ class CodeService {
         throw "Invalid language";
       }
     }
-
     return command;
   }
 

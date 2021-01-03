@@ -1,5 +1,5 @@
 class ValidationService {
-  async execute(code, input, lang, id) {
+  async execute(code, input, lang) {
     switch (lang) {
       case "javascript": {
         let words = ["require(", "exports.", "module.exports"];
