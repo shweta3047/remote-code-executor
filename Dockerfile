@@ -1,8 +1,5 @@
-FROM node:12
-WORKDIR '/app'
-
-COPY package*.json ./
-RUN npm install
-COPY . .
-EXPOSE 3000
-CMD ["npm","run","dev"]
+FROM node:12-alpine
+ WORKDIR /app
+ COPY . .
+ RUN npm install --save
+ CMD ["npm", "run","dev"]
