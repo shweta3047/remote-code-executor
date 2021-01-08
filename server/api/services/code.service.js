@@ -1,11 +1,14 @@
 import fs from "fs";
 import { execFile, spawn, exec } from "child_process";
+import path from "path";
 import ValidationService from "./validation.service";
-import { v4 as uuidv4 } from "uuid";
-const FILE_PATH = `./executable`;
-const FILE_NAME = `sample`;
-const INPUT_NAME = `input`;
+const ROOT_DIR = `${process.cwd()}`;
+const IMAGE_NAME = `executor:2.0`;
+const SOURCE_DIR = path.join(ROOT_DIR, "executor");
+const TARGET_DIR = `/app/code`;
+const MY_VOL = `${SOURCE_DIR}`;
 
+console.log(SOURCE_DIR);
 class CodeService {
   async execute(code, input, lang, cid) {
     try {
@@ -67,20 +70,21 @@ class CodeService {
       }
     }
 
-    fs.writeFile(`${FILE_PATH}/${fileName}`, code, (err) => {
+    fs.writeFile(`${SOURCE_DIR}/${fileName}`, code, (err) => {
       if (err) {
         throw {
           message: err,
         };
       }
     });
-    fs.writeFile(`${FILE_PATH}/${inputName}`, input, (err) => {
+    fs.writeFile(`${SOURCE_DIR}/${inputName}`, input, (err) => {
       if (err) {
         throw {
           message: err,
         };
       }
     });
+
     return {
       fileName,
       inputName,
@@ -91,17 +95,17 @@ class CodeService {
     let command = "";
     switch (lang) {
       case "javascript": {
-        command = `node ${FILE_PATH}/${fileName}`;
+        command = `node "${SOURCE_DIR}/${fileName}"`;
         break;
       }
       case "c++": {
-        command = `cd ${FILE_PATH} && g++ ${fileName} && a ${
+        command = `cd ${SOURCE_DIR} && g++ ${fileName} && a ${
           inputName ? `< ${inputName}` : null
         } && cd ..`;
         break;
       }
       case "python": {
-        command = `cd ${FILE_PATH} && python ${fileName} && ${
+        command = `cd ${SOURCE_DIR} && python ${fileName} && ${
           inputName ? `< ${inputName}` : null
         } && cd ..`;
         break;
@@ -110,7 +114,15 @@ class CodeService {
         throw "Invalid language";
       }
     }
-    return command;
+
+    const containerName = `${cid}container`;
+    const runContainer = `docker run -it -d --name ${containerName} -v "${MY_VOL}":${TARGET_DIR} ${IMAGE_NAME}`;
+    const runCode = `docker exec ${containerName} -sh -c ${command}`;
+
+    return {
+      runCode,
+      runContainer,
+    };
   }
 
   async execChild(command) {
@@ -134,20 +146,20 @@ class CodeService {
   }
 
   async deleteFiles(fileName, inputName, lang) {
-    fs.unlinkSync(`${FILE_PATH}/${fileName}`, (err) => {
+    fs.unlinkSync(`${SOURCE_DIR}/${fileName}`, (err) => {
       if (err) {
         throw err;
       }
     });
     if (inputName) {
-      fs.unlinkSync(`${FILE_PATH}/${inputName}`, (err) => {
+      fs.unlinkSync(`${SOURCE_DIR}/${inputName}`, (err) => {
         if (err) {
           throw err;
         }
       });
     }
     if (lang == "c++") {
-      fs.unlinkSync(`${FILE_PATH}/a.exe`, (err) => {
+      fs.unlinkSync(`${SOURCE_DIR}/a.exe`, (err) => {
         if (err) {
           throw err;
         }

@@ -16,7 +16,7 @@ class ValidationService {
         let reg1 = RegExp(
           /\bimport\W+(?:\w+\W+){0,}(?:os|subprocess|importlib)\b/g
         );
-        words = ["open("];
+        let words = ["open("];
 
         if (code.match(reg1)) {
           return {
